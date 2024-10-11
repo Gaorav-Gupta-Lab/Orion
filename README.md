@@ -1,5 +1,5 @@
-# FoCUS - Foci Counting Utility System
-### FoCUSco <i>(FoCUScompanion)</i> is a Python-based tool designed to gather and combine CSV files generated from FIJI's FoCUS macro suite. The application helps streamline and automate the process of analyzing data from multiple directories where foci counting results are stored.
+# ORION - Foci Counting and Analysis System
+### ORIONco <i>(ORIONcompanion)</i> is a Python-based tool designed to gather and combine CSV files generated from FIJI's FoCUS macro suite. The application helps streamline and automate the process of analyzing data from multiple directories where foci counting results are stored.
 ---
 ### Features
 - Collects CSV files from different directories that share the same file names.
