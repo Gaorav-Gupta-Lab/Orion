@@ -1,3 +1,12 @@
+'''
+Author: Paolo Guerra
+email: pguerra@email.unc.edu
+Lab: Gaorav Gupta Lab
+Lab email: gaorav.guptalab@gmail.com
+
+Copyright 2024
+'''
+
 from pathlib import Path
 import pandas as pd
 import re
