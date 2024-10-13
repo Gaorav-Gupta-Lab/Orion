@@ -15,6 +15,8 @@
 - tkinter
 - datetime
 - shutil
+- matplotlib
+- seaborn
 
 ### FIJI and ORION Macro Suite
 FIJI (ImageJ) must be installed.<br>
