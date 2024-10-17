@@ -476,6 +476,7 @@ macro "CountFoci [F3]" {
 	if(edu_active){
 		selectWindow(number_name + "-Edu");
 		resetMinAndMax();
+		// run("Auto Threshold", "method=Minimum white");
 		setAutoThreshold("Minimum dark no-reset");
 		run("Convert to Mask");
 	
