@@ -3,6 +3,7 @@ var number_name = "";
 var dir = "";
 var dest_directory = "";
 var previous_nRows = 0;
+var active_channels = newArray(4);
 
 //FUNCTION LIST
 // run gaussian subtraction on duplicated images
@@ -84,6 +85,30 @@ function confirmStartup(){
 	Dialog.show();
 }
 
+function setChannels(){
+	Dialog.create("Channel selection");
+
+	Dialog.addMessage("Select Imaged Channels");
+	// Add checkboxes with labels
+	Dialog.addCheckbox("Halo", true);
+	Dialog.addCheckbox("RAD51", false);
+	Dialog.addCheckbox("Edu", false);
+	Dialog.addCheckbox("DAPI", true);
+	
+	// Show the dialog and capture the user's response
+	Dialog.show();
+	
+	// Retrieve the values of the checkboxes
+	halo_active = Dialog.getCheckbox();
+	rad51_active = Dialog.getCheckbox();
+	edu_active = Dialog.getCheckbox();
+	dapi_active = Dialog.getCheckbox();
+	
+	if (!dapi_active) {
+		exit("DAPI channel required for macro, quitting...");
+	}
+	return newArray(halo_active, rad51_active, edu_active);
+}
 
 //MACROS
 macro "CloseAll [F9]"{
@@ -92,7 +117,7 @@ macro "CloseAll [F9]"{
 }
 
 // For masking individual images one at a time
-macro "MaskSingleImage [F1]"{
+macro "MaskSingleImage"{
 	confirmStartup();
 	file_path = File.openDialog("Choose Image");
 	dir = File.getDirectory(file_path);
@@ -137,6 +162,127 @@ macro "MaskSingleImage [F1]"{
 	run("Tile");
 	run("Threshold...");
 	
+}
+
+macro "MaskSingleImageW/Channels"{
+	confirmStartup();
+	file_path = File.openDialog("Choose Image");
+	dir = File.getDirectory(file_path);
+	
+	file_name = File.getName(file_path);
+	
+	underscore_name = truncate(file_name, "_", 1);
+	number_name = truncate(file_name, ".", 0);
+	dest_directory = dir + number_name + "/";
+	File.makeDirectory(dir + number_name);
+	
+	active_channels = setChannels();
+	halo_active = active_channels[0];
+	rad51_active = active_channels[1];
+	edu_active = active_channels[2];
+	
+	processing_size = setProcessingSize();
+	thresh = setMaskThreshold();
+	
+	
+	open(file_path);
+	run(processing_size);
+	
+	source_file = dir + file_name;
+	dest_file = dest_directory + file_name;			
+	file_renamed = File.rename(source_file, dest_file);
+	
+	run("Stack to Images");
+	
+	// rename windows for readability
+	if(!edu_active && !rad51_active){
+		renameWindow(underscore_name + "-0001", number_name + "-Halo");
+		renameWindow(underscore_name + "-0002", number_name + "-DAPI");
+	}
+	
+	else if(edu_active && !rad51_active){
+		renameWindow(underscore_name + "-0001", number_name + "-Halo");
+		renameWindow(underscore_name + "-0002", number_name + "-Edu");
+		renameWindow(underscore_name + "-0003", number_name + "-DAPI");
+	}
+	
+	else if (!edu_active && rad51_active) {
+		renameWindow(underscore_name + "-0001", number_name + "-Halo");
+		renameWindow(underscore_name + "-0002", number_name + "-RAD51");
+		renameWindow(underscore_name + "-0003", number_name + "-DAPI");
+	}
+	
+	else if (edu_active && rad51_active) {
+		renameWindow(underscore_name + "-0001", number_name + "-DAPI");
+		renameWindow(underscore_name + "-0002", number_name + "-Edu");
+		renameWindow(underscore_name + "-0003", number_name + "-Halo");
+		renameWindow(underscore_name + "-0004", number_name + "-RAD51");
+	}
+	
+	runGaussianSubtraction(number_name + "-Halo");
+	// before thresholding, save result of gaussian subtraction
+	selectWindow("Result of 1");
+	saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
+	
+	if(rad51_active){
+		runGaussianSubtraction(number_name + "-RAD51");
+	}
+	
+	generateMaximaMask(thresh);
+	
+	saveAs("Tiff", dest_directory + number_name + "_halo_post_threshold");
+	
+	selectWindow(number_name + "-DAPI");
+	resetMinAndMax();
+	setAutoThreshold("Default dark");
+
+//	selectWindow(number_name + "-DAPI");
+//	run("Analyze Particles...", "size=200-Infinity show=Outlines exclude include overlay add");
+//	close();
+//	saveAs("Tiff", dest_directory + number_name + "_nucleiROI");
+//	close();
+//
+//	selectWindow(number_name + "-Edu");
+//	setAutoThreshold("Default dark no-reset");
+////	setOption("BlackBackground", true);
+//	run("Convert to Mask");
+//	
+//	run("From ROI Manager");
+//	roiManager("measure");
+//	
+//	nRows = nResults;
+//	for (i = 0; i < nRows; i++) {
+//	    raw_intensity = getResult("RawIntDen", i);
+//	    above_threshold = raw_intensity > 1;
+//	    setResult("EduPos", i, above_threshold);
+//	}
+////	updateResults();
+//	saveAs("Results", dest_directory + number_name + "_edu_results.csv");
+//	close("Results");
+//	
+//	selectWindow(number_name + "_halo_post_threshold.tif");
+//	run("From ROI Manager");
+//	run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
+//	roiManager("Show All without labels");
+//	rename("Current Maxima" + number_name);
+//	roiManager("Measure");
+//
+//	nRows = nResults;
+//	for (i = 0; i < nRows; i++) {
+//	    raw_intensity = getResult("RawIntDen", i);
+//	    foci_count = round(raw_intensity / 255);
+//	    setResult("NumFoci", i, foci_count);
+//	}
+//
+//	updateResults();
+//	saveAs("Results", dest_directory + number_name + "_halo_results.csv");	
+//	
+//	if (isOpen("Results")){
+//		close("Results");
+//	}
+//	if (isOpen("ROI Manager")){
+//		close("ROI Manager");
+//	}
 }
 
 // for masking an entire directory at once, only images can be in the selected directory for it to work
@@ -199,25 +345,118 @@ macro "MaskDirectory [F2]" {
     run("Threshold...");
 }
 
+macro "MaskDirectoryW/Channels" {
+	confirmStartup();
+    dir = getDirectory("Choose a Directory");
+    list = getFileList(dir);
+
+	active_channels = setChannels();
+	halo_active = active_channels[0];
+	rad51_active = active_channels[1];
+	edu_active = active_channels[2];
+
+    processing_size = setProcessingSize();
+    images_per_batch = setBatchSize();
+    thresh = setMaskThreshold();
+    
+	current_batch_count = 0;
+
+    for (i = 0; i < list.length; i++) {
+        file_path = dir + list[i];
+        file_name = File.getName(file_path);
+
+        underscore_name = truncate(file_name, "_", 1);
+        number_name = truncate(file_name, ".", 0);
+        dest_directory = dir + number_name + "/";
+        File.makeDirectory(dir + number_name);
+        
+        open(file_path);
+        run(processing_size);
+        
+        source_file = dir + file_name;
+        dest_file = dest_directory + file_name;
+        file_renamed = File.rename(source_file, dest_file);
+        
+        if (!file_renamed) {
+            print("File not successfully renamed");
+        }
+
+        run("Stack to Images");
+		if(!edu_active && !rad51_active){
+		renameWindow(underscore_name + "-0001", number_name + "-Halo");
+		renameWindow(underscore_name + "-0002", number_name + "-DAPI");
+		}
+		
+		else if(edu_active && !rad51_active){
+			renameWindow(underscore_name + "-0001", number_name + "-Halo");
+			renameWindow(underscore_name + "-0002", number_name + "-Edu");
+			renameWindow(underscore_name + "-0003", number_name + "-DAPI");
+		}
+		
+		else if (!edu_active && rad51_active) {
+			renameWindow(underscore_name + "-0001", number_name + "-Halo");
+			renameWindow(underscore_name + "-0002", number_name + "-RAD51");
+			renameWindow(underscore_name + "-0003", number_name + "-DAPI");
+		}
+		
+		else if (edu_active && rad51_active) {
+			renameWindow(underscore_name + "-0001", number_name + "-DAPI");
+			renameWindow(underscore_name + "-0002", number_name + "-Edu");
+			renameWindow(underscore_name + "-0003", number_name + "-Halo");
+			renameWindow(underscore_name + "-0004", number_name + "-RAD51");
+		}
+        
+        runGaussianSubtraction(number_name + "-Halo");
+
+        selectWindow("Result of 1");
+        saveAs("Tiff", dest_directory + number_name + "_halo_pre_threshold");
+
+        generateMaximaMask(thresh);
+        
+        saveAs("Tiff", dest_directory + number_name + "_halo_post_threshold");
+        
+        selectWindow(number_name + "-DAPI");
+        resetMinAndMax();
+        setAutoThreshold("Default dark");
+        
+        current_batch_count++;
+
+        if (current_batch_count == images_per_batch) {
+    		run("Tile");
+    		run("Threshold...");
+            waitForUser("Review image batch, then click OK to continue with the next batch.");
+            current_batch_count = 0;
+        }
+    }
+    run("Tile");
+    run("Threshold...");
+}
+
+
 macro "CountFoci [F3]" {
 	current_window = getTitle();
 	dash_index = lastIndexOf(current_window, "-");
 	number_name = substring(current_window, 0, dash_index);
 	dest_directory = dir + number_name + "/";
 	
+	halo_active = active_channels[0];
+	rad51_active = active_channels[1];
+	edu_active = active_channels[2];
+	
 	run("Analyze Particles...", "size=200-Infinity show=Outlines exclude include overlay add");
 	close();
 	saveAs("Tiff", dest_directory + number_name + "_nucleiROI");
 	close();
 	 
-	selectWindow(number_name + "_post_threshold.tif");
+	// count halo foci
+	selectWindow(number_name + "_halo_post_threshold.tif");
 	run("From ROI Manager");
 	run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
 	roiManager("Show All without labels");
 	rename("Current Maxima" + number_name);
 	roiManager("Measure");
 	
-	selectWindow(number_name + "_post_threshold.tif");
+	selectWindow(number_name + "_halo_post_threshold.tif");
 	close();
 	selectWindow("Current Maxima" + number_name);
 	close();
@@ -225,11 +464,35 @@ macro "CountFoci [F3]" {
 	nRows = nResults;
 	for (i = 0; i < nRows; i++) {
 	    raw_intensity = getResult("RawIntDen", i);
-	    foci_count = raw_intensity / 255;
+	    foci_count = round(raw_intensity / 255);
 	    setResult("NumFoci", i, foci_count);
 	}
+	
 	updateResults();
-	saveAs("Results", dest_directory + number_name + "_results.csv");
+	saveAs("Results", dest_directory + number_name + "_halo_results.csv");
+	close("Results");
+	
+	// count edu positive cells
+	if(edu_active){
+		selectWindow(number_name + "-Edu");
+		resetMinAndMax();
+		setAutoThreshold("Minimum dark no-reset");
+		run("Convert to Mask");
+	
+		run("From ROI Manager");
+		roiManager("measure");
+		selectWindow(number_name + "-Edu");
+		close();
+	}
+	nRows = nResults;
+	for (i = 0; i < nRows; i++) {
+	    raw_intensity = getResult("RawIntDen", i);
+	    above_threshold = raw_intensity > 1;
+	    setResult("EduPos", i, above_threshold);
+	}
+
+	saveAs("Results", dest_directory + number_name + "_edu_results.csv");
+	
 	if (isOpen("Results")) {
 		close("Results");
 	}
@@ -305,7 +568,7 @@ macro "RunThresholdTest" {
 	selectWindow(number_name + "_pre_threshold.tif");
 	close();
 	
-	saveAs("Results", dest_directory + number_name + "_results.csv");
+	saveAs("Results", dest_directory + number_name + "_halo_results.csv");
 	if (isOpen("Results")) {
 		close("Results");
 	}

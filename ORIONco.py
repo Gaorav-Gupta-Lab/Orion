@@ -55,32 +55,38 @@ def gatherCSVs(dir, progress_bar, total_files):
     Exception: For any other errors encountered while reading a CSV file.
     """
     all_dfs = []
+    halo_temp_df = pd.DataFrame()
+    edu_temp_df = pd.DataFrame()
     processed_files = 0
     
     for folder in dir.iterdir():
         if folder.is_dir() and not folder.name.startswith('CombinedResults'):
             for file in folder.glob("*.csv"):
-                try:
-                    temp_df = pd.read_csv(file)
-                except pd.errors.EmptyDataError:
-                    print(f"Warning: {file} is empty, skipping...")
-                    continue
-                except Exception as e:
-                    print(f"Error reading {file}: {e}")
-                    continue
-                temp_df['Sample'] = file.name
-                patt = re.compile(r'(.*)_')
-                temp_df['SampleGroup'] = patt.match(file.name[:-len('_results.csv')]).group(1)
-                print("THRESH: ", positive_threshold)
-                temp_df['Positive'] = temp_df['NumFoci'] >= positive_threshold
-                all_dfs.append(temp_df)
+                if "edu" in file.name:
+                    edu_temp_df = pd.read_csv(file)
 
-                processed_files += 1
-                progress_bar['value'] = (processed_files / total_files) * 100
-                progress_bar.update()
+                if "halo" in file.name:
+                    halo_temp_df = pd.read_csv(file)
+                    halo_temp_df['Sample'] = file.name
+                    patt = re.compile(r'(.*)_')
+                    halo_temp_df['SampleGroup'] = patt.match(file.name[:-len('_halo_results.csv')]).group(1)
+                    halo_temp_df['Positive'] = halo_temp_df['NumFoci'] >= positive_threshold
+
+            if not edu_temp_df.empty:
+                full_temp_df = pd.concat([halo_temp_df, edu_temp_df['EduPos']], axis=1)
+            else:
+                full_temp_df = halo_temp_df
+            all_dfs.append(full_temp_df)
+
+            processed_files += 1
+            progress_bar['value'] = (processed_files / total_files) * 100
+            progress_bar.update()
 
     progress_window.destroy()
-    return pd.concat(all_dfs) if all_dfs else pd.DataFrame()
+
+    combined_df = pd.concat(all_dfs)
+
+    return combined_df if not combined_df.empty else pd.DataFrame()
 
 def countCSVFiles(dir):
     """
@@ -217,25 +223,62 @@ def writeCombinedResults(combined_df, sample_list, directory):
     indicating that no CSV files with the sample prefix were found. If the combined 
     DataFrame is empty, it prints an error message.
     """
+    # now = datetime.now()
+    # date_str = now.strftime("%y.%m.%d")
+    # time_str = now.strftime("%H.%M.%S")
+
+    # if not combined_df.empty:
+    #     for sample in sample_list:
+    #         filtered_df = combined_df[combined_df['Sample'].str.match(f"{sample}")]
+    #         if not filtered_df.empty:
+    #             new_dir = Path(directory) / f"CombinedResults_({date_str}-{time_str})"
+    #             new_dir.mkdir(parents=True, exist_ok=True)
+                
+    #             filename = f"{sample}_results_combined.csv"
+    #             file_path = new_dir / filename
+    #             filtered_df.to_csv(file_path, index=False)
+    #             print(f'Successfully created combined results file for: {sample}')
+    #         else:
+    #             print(f'No .csv files with "{sample}" prefix were found in this directory')
+    # else:
+    #     print("ERROR: No .csv files found in directory")
+
     now = datetime.now()
     date_str = now.strftime("%y.%m.%d")
     time_str = now.strftime("%H.%M.%S")
-
+    
     if not combined_df.empty:
+        # Create the directory once instead of in each loop iteration
+        new_dir = Path(directory) / f"CombinedResults_({date_str}-{time_str})"
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+        combined_df.to_csv(new_dir / "combined_df.csv", index = False)
+
+        summary_df = combined_df.groupby('SampleGroup').agg(
+        Positive=('Positive', 'sum'),
+        Total=('Positive', 'size'),
+        PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+        ).reset_index()
+
+        summary_df.to_csv(new_dir / "summary_df.csv", index = False)
+        
         for sample in sample_list:
-            filtered_df = combined_df[combined_df['Sample'].str.contains(sample, regex=False)]
+            # Ensure precise matching using a regex to avoid partial matches
+            sample_dir = Path(new_dir) / f"sample_dfs"
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            filtered_df = combined_df[combined_df['Sample'].str.match(f"^{sample}(?:$|[_-])")]
+            
             if not filtered_df.empty:
-                new_dir = Path(directory) / f"CombinedResults_({date_str}-{time_str})"
-                new_dir.mkdir(parents=True, exist_ok=True)
-                
                 filename = f"{sample}_results_combined.csv"
-                file_path = new_dir / filename
+                file_path = sample_dir / filename
                 filtered_df.to_csv(file_path, index=False)
                 print(f'Successfully created combined results file for: {sample}')
             else:
                 print(f'No .csv files with "{sample}" prefix were found in this directory')
     else:
         print("ERROR: No .csv files found in directory")
+
+    return [new_dir, combined_df, summary_df]
 
 def giveFeedback(total_files, sample_list):
     """
@@ -252,7 +295,10 @@ def giveFeedback(total_files, sample_list):
     messagebox.showinfo("", f"Process completed successfully\nFiles Processed: {total_files}\nSamples Detected: {len(sample_list)}\n")
 
 def setPositiveThreshold(root):
-
+    """
+    Prompts user to select threshold for foci number to consider cells as positive.
+    Uses tkinter toplevel window.
+    """
     top = tk.Toplevel(root)
     top.title("Set Positive Threshold")
     top.geometry("400x200")
@@ -280,7 +326,6 @@ def setPositiveThreshold(root):
 
     def cancel():
         top.destroy()
-        # messagebox.showwarning("", f"Process aborted by user")
         result[0] = False
         
     submit_button = tk.Button(frame, text="Submit", font=("Helvetica 12 bold"), bg="#679969", fg="white", command=submit, relief=tk.GROOVE)
@@ -293,34 +338,38 @@ def setPositiveThreshold(root):
     
     return result[0]
 
-def plotResults(df, sample_list):
+def plotResults(combined_df, summary_df, sample_list, dir):
     """Plots the results of focus counts by sample."""
     global positive_threshold   
-    summary_df = df.groupby('SampleGroup').agg(
-        Positive=('Positive', 'sum'),
-        Total=('Positive', 'size'),
-        PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
-    ).reset_index()
+    # summary_df = df.groupby('SampleGroup').agg(
+    #     Positive=('Positive', 'sum'),
+    #     Total=('Positive', 'size'),
+    #     PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+    # ).reset_index()
     print(summary_df)
 
-    sns.barplot(x='SampleGroup', y='NumFoci', data=df, capsize=0.1, hue='SampleGroup', palette='viridis')
-    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
-    plt.xticks(rotation=45)
+    sns.barplot(x='SampleGroup', y='NumFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+    sns.stripplot(x='SampleGroup', y='NumFoci', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+    plt.xticks(rotation=45, fontsize=6)
     plt.title('Focus Count by Sample')
     plt.ylabel('Count')
-    plt.ylim(top=df['NumFoci'].max() + plt.ylim()[1] * 0.2)
+    plt.ylim(top=combined_df['NumFoci'].max() + plt.ylim()[1] * 0.2)
     plt.xlabel(None)
     plt.legend('', frameon=False)
     plt.axhline(y=positive_threshold, color='r', linestyle='--')
 
-    for sample in sample_list:
-        pos_pct = summary_df[summary_df['SampleGroup'] == sample]['PctPositive'].iloc[0]
-        plt.text(sample, plt.ylim()[1] - plt.ylim()[1] * 0.1,
-                 f'% Positive: {pos_pct}\n({summary_df[summary_df["SampleGroup"] == sample]["Positive"].iloc[0]}/{summary_df[summary_df["SampleGroup"] == sample]["Total"].iloc[0]})',
-                 color='k', ha='center')
+    # for sample in sample_list:
+    #     print(sample)
+    #     pos_pct = summary_df[summary_df['SampleGroup'] == sample]['PctPositive'].iloc[0]
+    #     plt.text(sample, plt.ylim()[1] - plt.ylim()[1] * 0.1,
+    #              f'% Positive: {pos_pct}\n({summary_df[summary_df["SampleGroup"] == sample]["Positive"].iloc[0]}/{summary_df[summary_df["SampleGroup"] == sample]["Total"].iloc[0]})',
+    #              color='k', ha='center')
+    plot_directory = dir / "results_plot.tif"
+    plt.savefig(plot_directory, format = 'tif', dpi = 300)
     
     plt.tight_layout()
     plt.show()
+
 
 def main():
     """Main function to run the program."""
@@ -349,9 +398,9 @@ def main():
     progress_window, progress_bar = createProgressBar()
     combined_df = gatherCSVs(directory, progress_bar, total_files)
 
-    writeCombinedResults(combined_df, sample_list, directory)
+    (combined_results_directory, combined_results_df, summary_df) = writeCombinedResults(combined_df, sample_list, directory)
     giveFeedback(total_files, sample_list)
-    plotResults(combined_df, sample_list)
+    plotResults(combined_df, summary_df, sample_list, combined_results_directory)
 
 if __name__ == "__main__":
     main()
