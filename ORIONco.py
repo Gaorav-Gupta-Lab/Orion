@@ -70,12 +70,19 @@ def gatherCSVs(dir, progress_bar, total_files):
                     halo_temp_df['Sample'] = file.name
                     patt = re.compile(r'(.*)_')
                     halo_temp_df['SampleGroup'] = patt.match(file.name[:-len('_halo_results.csv')]).group(1)
-                    halo_temp_df['Positive'] = halo_temp_df['NumFoci'] >= positive_threshold
+                    halo_temp_df['Positive'] = halo_temp_df['NumHaloFoci'] >= positive_threshold
+                    # halo_temp_df['Positive'] = halo_temp_df['NumFoci_Halo'] >= positive_threshold
+
+                if "rad51" in file.name:
+                    rad51_temp_df = pd.read_csv(file)
+
+            full_temp_df = halo_temp_df
 
             if not edu_temp_df.empty:
-                full_temp_df = pd.concat([halo_temp_df, edu_temp_df['EduPos']], axis=1)
-            else:
-                full_temp_df = halo_temp_df
+                full_temp_df['EduPos'] = edu_temp_df['EduPos']
+            if not rad51_temp_df.empty:
+                full_temp_df['NumFoci_RAD51'] = rad51_temp_df['NumFoci_RAD51']
+
             all_dfs.append(full_temp_df)
 
             processed_files += 1
@@ -86,7 +93,7 @@ def gatherCSVs(dir, progress_bar, total_files):
 
     combined_df = pd.concat(all_dfs)
 
-    return combined_df if not combined_df.empty else pd.DataFrame()
+    return (combined_df, 'EduPos' in combined_df.columns, 'NumFoci_RAD51' in combined_df.columns) if not combined_df.empty else pd.DataFrame()
 
 def countCSVFiles(dir):
     """
@@ -223,26 +230,6 @@ def writeCombinedResults(combined_df, sample_list, directory):
     indicating that no CSV files with the sample prefix were found. If the combined 
     DataFrame is empty, it prints an error message.
     """
-    # now = datetime.now()
-    # date_str = now.strftime("%y.%m.%d")
-    # time_str = now.strftime("%H.%M.%S")
-
-    # if not combined_df.empty:
-    #     for sample in sample_list:
-    #         filtered_df = combined_df[combined_df['Sample'].str.match(f"{sample}")]
-    #         if not filtered_df.empty:
-    #             new_dir = Path(directory) / f"CombinedResults_({date_str}-{time_str})"
-    #             new_dir.mkdir(parents=True, exist_ok=True)
-                
-    #             filename = f"{sample}_results_combined.csv"
-    #             file_path = new_dir / filename
-    #             filtered_df.to_csv(file_path, index=False)
-    #             print(f'Successfully created combined results file for: {sample}')
-    #         else:
-    #             print(f'No .csv files with "{sample}" prefix were found in this directory')
-    # else:
-    #     print("ERROR: No .csv files found in directory")
-
     now = datetime.now()
     date_str = now.strftime("%y.%m.%d")
     time_str = now.strftime("%H.%M.%S")
@@ -338,25 +325,29 @@ def setPositiveThreshold(root):
     
     return result[0]
 
-def plotResults(combined_df, summary_df, sample_list, dir):
+def plotResults(combined_df, summary_df, sample_list, dir, active_channels):
     """Plots the results of focus counts by sample."""
     global positive_threshold   
-    # summary_df = df.groupby('SampleGroup').agg(
-    #     Positive=('Positive', 'sum'),
-    #     Total=('Positive', 'size'),
-    #     PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
-    # ).reset_index()
+    edu_active, rad51_active = active_channels
     print(summary_df)
 
-    sns.barplot(x='SampleGroup', y='NumFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
-    sns.stripplot(x='SampleGroup', y='NumFoci', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
-    plt.xticks(rotation=45, fontsize=6)
-    plt.title('Focus Count by Sample')
+    sns.barplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+    # sns.barplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+    if edu_active:
+        sns.stripplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+        # sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+    else:
+        sns.stripplot(x='SampleGroup', y='NumHaloFoci', color = 'k', data=combined_df, size=5, alpha=0.65)
+        # sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, size=5, alpha=0.65)
+
+    plt.xticks(rotation=90, fontsize=6)
+    plt.title('Halo Focus Count by Sample')
     plt.ylabel('Count')
-    plt.ylim(top=combined_df['NumFoci'].max() + plt.ylim()[1] * 0.2)
+    plt.ylim(top=combined_df['NumHaloFoci'].max() + plt.ylim()[1] * 0.2)
+    # plt.ylim(top=combined_df['NumFoci_Halo'].max() + plt.ylim()[1] * 0.2)
     plt.xlabel(None)
     plt.legend('', frameon=False)
-    plt.axhline(y=positive_threshold, color='r', linestyle='--')
+    plt.axhline(y=positive_threshold, color='r', linestyle='--', alpha = 0.5)
 
     # for sample in sample_list:
     #     print(sample)
@@ -364,7 +355,30 @@ def plotResults(combined_df, summary_df, sample_list, dir):
     #     plt.text(sample, plt.ylim()[1] - plt.ylim()[1] * 0.1,
     #              f'% Positive: {pos_pct}\n({summary_df[summary_df["SampleGroup"] == sample]["Positive"].iloc[0]}/{summary_df[summary_df["SampleGroup"] == sample]["Total"].iloc[0]})',
     #              color='k', ha='center')
-    plot_directory = dir / "results_plot.tif"
+    plot_directory = dir / "halo_results_plot.tif"
+    plt.savefig(plot_directory, format = 'tif', dpi = 300)
+    
+    plt.tight_layout()
+    plt.show()
+
+    if rad51_active:
+        sns.barplot(x='SampleGroup', y='NumFoci_RAD51', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+        if edu_active:
+            sns.stripplot(x='SampleGroup', y='NumFoci_RAD51', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+        else:
+            sns.stripplot(x='SampleGroup', y='NumFoci_RAD51', data=combined_df, size=5, alpha=0.65)
+
+        if rad51_active:
+            sns.stripplot(x='SampleGroup', y='NumFoci_RAD51', data=combined_df, color = 'green', size=5, alpha=0.65)
+
+        plt.xticks(rotation=90, fontsize=6)
+        plt.title('RAD51 Focus Count by Sample')
+        plt.ylabel('Count')
+        plt.ylim(top=combined_df['NumFoci_RAD51'].max() + plt.ylim()[1] * 0.2)
+        plt.xlabel(None)
+        plt.legend('', frameon=False)
+
+    plot_directory = dir / "rad51_results_plot.tif"
     plt.savefig(plot_directory, format = 'tif', dpi = 300)
     
     plt.tight_layout()
@@ -396,11 +410,11 @@ def main():
     if not setPositiveThreshold(root):
         abort()
     progress_window, progress_bar = createProgressBar()
-    combined_df = gatherCSVs(directory, progress_bar, total_files)
+    combined_df, edu_active, rad51_active = gatherCSVs(directory, progress_bar, total_files)
 
     (combined_results_directory, combined_results_df, summary_df) = writeCombinedResults(combined_df, sample_list, directory)
     giveFeedback(total_files, sample_list)
-    plotResults(combined_df, summary_df, sample_list, combined_results_directory)
+    plotResults(combined_df, summary_df, sample_list, combined_results_directory, [edu_active, rad51_active])
 
 if __name__ == "__main__":
     main()

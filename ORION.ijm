@@ -68,8 +68,8 @@ function setBatchSize(){
 	return Dialog.getNumber();
 }
 
-function setMaskThreshold(){
-	Dialog.create("Choose threshold for focus processing");
+function setMaskThreshold(target){
+	Dialog.create("Choose threshold for " + target + " processing");
 	Dialog.addNumber("Threshold", 50);
 	Dialog.show();
 	return Dialog.getNumber();
@@ -222,67 +222,27 @@ macro "MaskSingleImageW/Channels"{
 	runGaussianSubtraction(number_name + "-Halo");
 	// before thresholding, save result of gaussian subtraction
 	selectWindow("Result of 1");
-	saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
-	
-	if(rad51_active){
-		runGaussianSubtraction(number_name + "-RAD51");
-	}
+	saveAs("Tiff", dest_directory + number_name + "_halo_pre_threshold");
 	
 	generateMaximaMask(thresh);
 	
 	saveAs("Tiff", dest_directory + number_name + "_halo_post_threshold");
 	
+	if(rad51_active){
+		runGaussianSubtraction(number_name + "-RAD51");
+		selectWindow("Result of 1");
+		saveAs("Tiff", dest_directory + number_name + "_rad51_pre_threshold");
+		
+		generateMaximaMask(thresh);
+		
+		saveAs("Tiff", dest_directory + number_name + "_rad51_post_threshold");
+
+	}
+	
+	
 	selectWindow(number_name + "-DAPI");
 	resetMinAndMax();
 	setAutoThreshold("Default dark");
-
-//	selectWindow(number_name + "-DAPI");
-//	run("Analyze Particles...", "size=200-Infinity show=Outlines exclude include overlay add");
-//	close();
-//	saveAs("Tiff", dest_directory + number_name + "_nucleiROI");
-//	close();
-//
-//	selectWindow(number_name + "-Edu");
-//	setAutoThreshold("Default dark no-reset");
-////	setOption("BlackBackground", true);
-//	run("Convert to Mask");
-//	
-//	run("From ROI Manager");
-//	roiManager("measure");
-//	
-//	nRows = nResults;
-//	for (i = 0; i < nRows; i++) {
-//	    raw_intensity = getResult("RawIntDen", i);
-//	    above_threshold = raw_intensity > 1;
-//	    setResult("EduPos", i, above_threshold);
-//	}
-////	updateResults();
-//	saveAs("Results", dest_directory + number_name + "_edu_results.csv");
-//	close("Results");
-//	
-//	selectWindow(number_name + "_halo_post_threshold.tif");
-//	run("From ROI Manager");
-//	run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
-//	roiManager("Show All without labels");
-//	rename("Current Maxima" + number_name);
-//	roiManager("Measure");
-//
-//	nRows = nResults;
-//	for (i = 0; i < nRows; i++) {
-//	    raw_intensity = getResult("RawIntDen", i);
-//	    foci_count = round(raw_intensity / 255);
-//	    setResult("NumFoci", i, foci_count);
-//	}
-//
-//	updateResults();
-//	saveAs("Results", dest_directory + number_name + "_halo_results.csv");	
-//	
-//	if (isOpen("Results")){
-//		close("Results");
-//	}
-//	if (isOpen("ROI Manager")){
-//		close("ROI Manager");
-//	}
 }
 
 // for masking an entire directory at once, only images can be in the selected directory for it to work
@@ -357,13 +317,19 @@ macro "MaskDirectoryW/Channels" {
 
     processing_size = setProcessingSize();
     images_per_batch = setBatchSize();
-    thresh = setMaskThreshold();
-    
+    halo_thresh = setMaskThreshold("halo");
+    rad51_thresh = setMaskThreshold("rad51");
 	current_batch_count = 0;
+	current_batch_loop = 1;
+	total_batch_loops = round(list.length / images_per_batch);
 
     for (i = 0; i < list.length; i++) {
         file_path = dir + list[i];
         file_name = File.getName(file_path);
+
+		if(File.isDirectory(file_path)){
+			continue;
+		}
 
         underscore_name = truncate(file_name, "_", 1);
         number_name = truncate(file_name, ".", 0);
@@ -411,9 +377,20 @@ macro "MaskDirectoryW/Channels" {
         selectWindow("Result of 1");
         saveAs("Tiff", dest_directory + number_name + "_halo_pre_threshold");
 
-        generateMaximaMask(thresh);
+        generateMaximaMask(halo_thresh);
         
         saveAs("Tiff", dest_directory + number_name + "_halo_post_threshold");
+        
+        if(rad51_active){
+			runGaussianSubtraction(number_name + "-RAD51");
+			selectWindow("Result of 1");
+			saveAs("Tiff", dest_directory + number_name + "_rad51_pre_threshold");
+			
+			generateMaximaMask(rad51_thresh);
+			
+			saveAs("Tiff", dest_directory + number_name + "_rad51_post_threshold");
+		}
+
         
         selectWindow(number_name + "-DAPI");
         resetMinAndMax();
@@ -424,7 +401,8 @@ macro "MaskDirectoryW/Channels" {
         if (current_batch_count == images_per_batch) {
     		run("Tile");
     		run("Threshold...");
-            waitForUser("Review image batch, then click OK to continue with the next batch.");
+            waitForUser("Currently on batch: " + current_batch_loop + " out of " + total_batch_loops + "\nClick OK to continue with the next batch.");
+		    current_batch_loop++;
             current_batch_count = 0;
         }
     }
@@ -465,11 +443,37 @@ macro "CountFoci [F3]" {
 	for (i = 0; i < nRows; i++) {
 	    raw_intensity = getResult("RawIntDen", i);
 	    foci_count = round(raw_intensity / 255);
-	    setResult("NumFoci", i, foci_count);
+	    setResult("NumHaloFoci", i, foci_count);
 	}
 	
 	updateResults();
 	saveAs("Results", dest_directory + number_name + "_halo_results.csv");
+	close("Results");
+
+	
+	// count RAD51 foci
+	selectWindow(number_name + "_rad51_post_threshold.tif");
+	run("From ROI Manager");
+	run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
+	roiManager("Show All without labels");
+	rename("Current Maxima" + number_name);
+	roiManager("Measure");
+	
+	selectWindow(number_name + "_rad51_post_threshold.tif");
+	close();
+	selectWindow("Current Maxima" + number_name);
+	close();
+	
+	nRows = nResults;
+	for (i = 0; i < nRows; i++) {
+	    raw_intensity = getResult("RawIntDen", i);
+	    foci_count = round(raw_intensity / 255);
+	    setResult("NumFoci_RAD51", i, foci_count);
+	}
+
+	
+	updateResults();
+	saveAs("Results", dest_directory + number_name + "_rad51_results.csv");
 	close("Results");
 	
 	// count edu positive cells
