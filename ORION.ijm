@@ -31,8 +31,15 @@ function renameWindow(old_name, new_name){
 	rename(new_name);
 }
 
+function lastCharacterNumeric(str) {
+    if (lengthOf(str) == 0) return false;  // Handle empty string
+    
+    code = charCodeAt(str, lengthOf(str) - 1);  // Get ASCII of last character
+    return (code >= 48 && code <= 57);  // Check if it's a number (0-9)
+}
+
 // truncate file_name using specified delimiter
-function truncate(name, delimiter, offset){
+function truncate(name, delimiter){
 	if (delimiter == ".") {
 		return substring(name, 0, indexOf(name, "."));
 	}
@@ -117,53 +124,6 @@ macro "CloseAll [F9]"{
 }
 
 // For masking individual images one at a time
-macro "MaskSingleImage"{
-	confirmStartup();
-	file_path = File.openDialog("Choose Image");
-	dir = File.getDirectory(file_path);
-	
-	processing_size = setProcessingSize();
-	thresh = setMaskThreshold();
-	
-	file_name = File.getName(file_path);
-	
-	underscore_name = truncate(file_name, "_", 1);
-	number_name = truncate(file_name, ".", 0);
-	dest_directory = dir + number_name + "/";
-	File.makeDirectory(dir + number_name);
-	
-	open(file_path);
-	run(processing_size);
-	
-	source_file = dir + file_name;
-	dest_file = dest_directory + file_name;			
-	file_renamed = File.rename(source_file, dest_file);
-	
-	run("Stack to Images");
-	
-	// rename windows so that they don't have a lot of zeroes, not really necessary but makes troubleshooting easier
-	renameWindow(underscore_name + "-0001", number_name + "-Halo");
-	renameWindow(underscore_name + "-0002", number_name + "-DAPI");
-	
-	runGaussianSubtraction(number_name + "-Halo");
-
-	// before thresholding, save result of gaussian subtraction
-	selectWindow("Result of 1");
-	saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
-	
-	generateMaximaMask(thresh);
-	
-	saveAs("Tiff", dest_directory + number_name + "_post_threshold");
-	
-	selectWindow(number_name + "-DAPI");
-	resetMinAndMax();
-	setAutoThreshold("Default dark");
-		
-	run("Tile");
-	run("Threshold...");
-	
-}
-
 macro "MaskSingleImageW/Channels"{
 	confirmStartup();
 	file_path = File.openDialog("Choose Image");
@@ -173,6 +133,14 @@ macro "MaskSingleImageW/Channels"{
 	
 	underscore_name = truncate(file_name, "_", 1);
 	number_name = truncate(file_name, ".", 0);
+	print(number_name);
+	if(!lastCharacterNumeric(number_name)){
+		print("Not numeric" + number_name);
+		number_name = number_name + "9";
+	}
+	if(lastCharacterNumeric(number_name){
+		print("Numeric" + number_name);
+	}
 	dest_directory = dir + number_name + "/";
 	File.makeDirectory(dir + number_name);
 	
@@ -236,9 +204,7 @@ macro "MaskSingleImageW/Channels"{
 		generateMaximaMask(thresh);
 		
 		saveAs("Tiff", dest_directory + number_name + "_rad51_post_threshold");
-
 	}
-	
 	
 	selectWindow(number_name + "-DAPI");
 	resetMinAndMax();
@@ -246,65 +212,6 @@ macro "MaskSingleImageW/Channels"{
 }
 
 // for masking an entire directory at once, only images can be in the selected directory for it to work
-macro "MaskDirectory [F2]" {
-	confirmStartup();
-    dir = getDirectory("Choose a Directory");
-    list = getFileList(dir);
-    processing_size = setProcessingSize();
-    images_per_batch = setBatchSize();
-    thresh = setMaskThreshold();
-    current_batch_count = 0;
-
-    for (i = 0; i < list.length; i++) {
-        file_path = dir + list[i];
-        file_name = File.getName(file_path);
-
-        underscore_name = truncate(file_name, "_", 1);
-        number_name = truncate(file_name, ".", 0);
-        dest_directory = dir + number_name + "/";
-        File.makeDirectory(dir + number_name);
-        
-        open(file_path);
-        run(processing_size);
-        
-        source_file = dir + file_name;
-        dest_file = dest_directory + file_name;
-        file_renamed = File.rename(source_file, dest_file);
-        
-        if (!file_renamed) {
-            print("File not successfully renamed");
-        }
-
-        run("Stack to Images");
-        renameWindow(underscore_name + "-0001", number_name + "-Halo");
-        renameWindow(underscore_name + "-0002", number_name + "-DAPI");
-        
-        runGaussianSubtraction(number_name + "-Halo");
-
-        selectWindow("Result of 1");
-        saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
-
-        generateMaximaMask(thresh);
-        
-        saveAs("Tiff", dest_directory + number_name + "_post_threshold");
-        
-        selectWindow(number_name + "-DAPI");
-        resetMinAndMax();
-        setAutoThreshold("Default dark");
-        
-        current_batch_count++;
-
-        if (current_batch_count == images_per_batch) {
-    		run("Tile");
-    		run("Threshold...");
-            waitForUser("Review image batch, then click OK to continue with the next batch.");
-            current_batch_count = 0;
-        }
-    }
-    run("Tile");
-    run("Threshold...");
-}
-
 macro "MaskDirectoryW/Channels" {
 	confirmStartup();
     dir = getDirectory("Choose a Directory");
@@ -331,8 +238,8 @@ macro "MaskDirectoryW/Channels" {
 			continue;
 		}
 
-        underscore_name = truncate(file_name, "_", 1);
-        number_name = truncate(file_name, ".", 0);
+        underscore_name = truncate(file_name, "_");
+        number_name = truncate(file_name, ".");
         dest_directory = dir + number_name + "/";
         File.makeDirectory(dir + number_name);
         
@@ -443,7 +350,7 @@ macro "CountFoci [F3]" {
 	for (i = 0; i < nRows; i++) {
 	    raw_intensity = getResult("RawIntDen", i);
 	    foci_count = round(raw_intensity / 255);
-	    setResult("NumHaloFoci", i, foci_count);
+	    setResult("NumFoci_Halo", i, foci_count);
 	}
 	
 	updateResults();

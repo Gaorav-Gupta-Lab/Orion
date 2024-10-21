@@ -65,6 +65,9 @@ def gatherCSVs(dir, progress_bar, total_files):
                 if "edu" in file.name:
                     edu_temp_df = pd.read_csv(file)
 
+                if "rad51" in file.name:
+                    rad51_temp_df = pd.read_csv(file)
+
                 if "halo" in file.name:
                     halo_temp_df = pd.read_csv(file)
                     halo_temp_df['Sample'] = file.name
