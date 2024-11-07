@@ -225,7 +225,9 @@ macro "MaskDirectoryW/Channels" {
     processing_size = setProcessingSize();
     images_per_batch = setBatchSize();
     halo_thresh = setMaskThreshold("halo");
-    rad51_thresh = setMaskThreshold("rad51");
+    if (rad51_active) {
+    	rad51_thresh = setMaskThreshold("rad51");
+    }
 	current_batch_count = 0;
 	current_batch_loop = 1;
 	total_batch_loops = round(list.length / images_per_batch);
@@ -359,17 +361,19 @@ macro "CountFoci [F3]" {
 
 	
 	// count RAD51 foci
-	selectWindow(number_name + "_rad51_post_threshold.tif");
-	run("From ROI Manager");
-	run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
-	roiManager("Show All without labels");
-	rename("Current Maxima" + number_name);
-	roiManager("Measure");
-	
-	selectWindow(number_name + "_rad51_post_threshold.tif");
-	close();
-	selectWindow("Current Maxima" + number_name);
-	close();
+	if (rad51_active) {
+		selectWindow(number_name + "_rad51_post_threshold.tif");
+		run("From ROI Manager");
+		run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
+		roiManager("Show All without labels");
+		rename("Current Maxima" + number_name);
+		roiManager("Measure");
+		
+		selectWindow(number_name + "_rad51_post_threshold.tif");
+		close();
+		selectWindow("Current Maxima" + number_name);
+		close();
+	}
 	
 	nRows = nResults;
 	for (i = 0; i < nRows; i++) {

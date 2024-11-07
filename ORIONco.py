@@ -57,6 +57,7 @@ def gatherCSVs(dir, progress_bar, total_files):
     all_dfs = []
     halo_temp_df = pd.DataFrame()
     edu_temp_df = pd.DataFrame()
+    rad51_temp_df = pd.DataFrame()
     processed_files = 0
     
     for folder in dir.iterdir():
@@ -66,18 +67,20 @@ def gatherCSVs(dir, progress_bar, total_files):
                     edu_temp_df = pd.read_csv(file)
 
                 if "rad51" in file.name:
-                    rad51_temp_df = pd.read_csv(file)
+                    print("RAD51:", file.name)
+                    try:
+                        rad51_temp_df = pd.read_csv(file)
+                    except:
+                        rad51_temp_df = pd.DataFrame()
+                    
 
                 if "halo" in file.name:
                     halo_temp_df = pd.read_csv(file)
                     halo_temp_df['Sample'] = file.name
                     patt = re.compile(r'(.*)_')
                     halo_temp_df['SampleGroup'] = patt.match(file.name[:-len('_halo_results.csv')]).group(1)
-                    halo_temp_df['Positive'] = halo_temp_df['NumHaloFoci'] >= positive_threshold
-                    # halo_temp_df['Positive'] = halo_temp_df['NumFoci_Halo'] >= positive_threshold
-
-                if "rad51" in file.name:
-                    rad51_temp_df = pd.read_csv(file)
+                    # halo_temp_df['Positive'] = halo_temp_df['NumHaloFoci'] >= positive_threshold
+                    halo_temp_df['Positive'] = halo_temp_df['NumFoci_Halo'] >= positive_threshold
 
             full_temp_df = halo_temp_df
 
@@ -334,20 +337,20 @@ def plotResults(combined_df, summary_df, sample_list, dir, active_channels):
     edu_active, rad51_active = active_channels
     print(summary_df)
 
-    sns.barplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
-    # sns.barplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+    # sns.barplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
+    sns.barplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, capsize=0.1, hue='SampleGroup', palette='dark')
     if edu_active:
-        sns.stripplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
-        # sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+        # sns.stripplot(x='SampleGroup', y='NumHaloFoci', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+        sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, hue='EduPos', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
     else:
-        sns.stripplot(x='SampleGroup', y='NumHaloFoci', color = 'k', data=combined_df, size=5, alpha=0.65)
-        # sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, size=5, alpha=0.65)
+        # sns.stripplot(x='SampleGroup', y='NumHaloFoci', color = 'k', data=combined_df, size=5, alpha=0.65)
+        sns.stripplot(x='SampleGroup', y='NumFoci_Halo', data=combined_df, size=5, alpha=0.65)
 
     plt.xticks(rotation=90, fontsize=6)
     plt.title('Halo Focus Count by Sample')
     plt.ylabel('Count')
-    plt.ylim(top=combined_df['NumHaloFoci'].max() + plt.ylim()[1] * 0.2)
-    # plt.ylim(top=combined_df['NumFoci_Halo'].max() + plt.ylim()[1] * 0.2)
+    # plt.ylim(top=combined_df['NumHaloFoci'].max() + plt.ylim()[1] * 0.2)
+    plt.ylim(top=combined_df['NumFoci_Halo'].max() + plt.ylim()[1] * 0.2)
     plt.xlabel(None)
     plt.legend('', frameon=False)
     plt.axhline(y=positive_threshold, color='r', linestyle='--', alpha = 0.5)
@@ -381,11 +384,11 @@ def plotResults(combined_df, summary_df, sample_list, dir, active_channels):
         plt.xlabel(None)
         plt.legend('', frameon=False)
 
-    plot_directory = dir / "rad51_results_plot.tif"
-    plt.savefig(plot_directory, format = 'tif', dpi = 300)
-    
-    plt.tight_layout()
-    plt.show()
+        plot_directory = dir / "rad51_results_plot.tif"
+        plt.savefig(plot_directory, format = 'tif', dpi = 300)
+        
+        plt.tight_layout()
+        plt.show()
 
 
 def main():
